@@ -11,16 +11,15 @@ import pandas as pd
 import os
 import datetime
 from sklearn.decomposition import *
-import matplotlib.pyplot as plt
 
-datetime.datetime.strftime()
+del data_df
+del data
 
 os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
 
 with open('Tickers.txt') as tickers:
     reader=tickers.read().split("\n")
     list_tickers=[read for read in reader]
-print(list_tickers)
 
 data=pd.read_csv('AAPL.txt'.format(ticker), sep=",")
 data['DATE']=data['DATE'].apply(lambda x : str(x))
@@ -30,18 +29,25 @@ data.index=data["DATE"]
 
 
 data=data[" OPEN"]
-data=data.to_frame()
+data_df=pd.DataFrame(data)
+
+print(type(data_df))
+damaged_stocks=[]
 for ticker in list_tickers[2:]:        
     df = pd.read_csv('{}.txt'.format(ticker), sep=",")
     df['DATE']=df['DATE'].apply(lambda x : str(x))
     df['DATE']=df['DATE'].apply(lambda x : datetime.datetime.strptime(x,'%Y%m%d'))
     df.index=df["DATE"]
-    df=df[" OPEN"]
-    data=data.merge(df.to_frame(),left_index=True,right_index=True)
+    if len(df)<3000:
+        #print(ticker)
+        damaged_stocks.append(ticker)        
+    else :
+        #print(type(df))
+        data_df=data_df.merge(df,left_index=True,right_index=True)
     #data=data.merge(data,df)
     
-
-data=data.transpose()
+data_df.columns=list_tickers[1:]
+data_df=data_df.transpose()
 # replicate Data from question in DataFrame
 
 
@@ -55,10 +61,13 @@ def scatterplot(x_data, y_data, x_label, y_label, title):
     fig.autofmt_xdate()
 
 #use column headers as x values
-x = data.columns
+x = data_df.columns
 # sum all values from DataFrame along vertical axis
-y = data.values
-scatterplot(x,y, "x_label", "y_label", "title")
+y = data_df.loc['AAPL']
+dates=data_df.columns
 
+lag=[(dates[i]-dates[i+1]).days for i in range (len(dates)-1)]
+lag_dataframe=pd.DataFrame(lag)
+lag_dataframe.plot(kind='hist')
 plt.show()
     
