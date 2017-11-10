@@ -27,6 +27,8 @@ os.chdir('C:/Users/Makhtar Ba/Documents/GitHub/RL_portf_optimisation')
     
 from optimization import *
 
+import statsmodels
+
 
 
         
@@ -157,12 +159,42 @@ if __name__ == "__main__":
     
     ##########################################
     
-    ica = FastICA(n_components=np.shape(return_df)[1])
-    ica.fit_transform(return_df)  # Reconstruct independ constituents 
+    '''
+    
+    Testing the Fast ICA 
+    
+    '''
+    
+    ica = FastICA(n_components=5)
+    Test_Ind_components=ica.fit_transform(return_df)  # Reconstruct independ constituents 
+    Test_Ind_components=pd.DataFrame(Test_Ind_components)
     mixing = ica.mixing_  # Get estimated mixing matrix
     demixing=np.linalg.inv(mixing)
     
-        
+    corr_factors=np.corrcoef(Ind_components.transpose())
+    corr_returns=np.corrcoef(return_df.transpose())
+    cov_factors=np.cov(Ind_components.transpose())
+    mean_factors=np.mean(Ind_components)
+    test_statistic= statsmodels.stats.diagnostic.acorr_ljungbox(Ind_components['0'])
+    
+    
+    plt.plot(return_df['AAPL'])
+    Test_Ind_components.describe()
+    test_corr_factors=np.corrcoef(Test_Ind_components.transpose())
+    test_corr_returns=np.corrcoef(return_df.transpose())
+    test_cov_factors=np.cov(Test_Ind_components.transpose())
+    test_mean_factors=np.mean(Test_Ind_components)
+    
+    plt.show()       
+    
+    normal_test_1=[np.random.multivariate_normal([1,1,1],np.eye(3)) for s in range(3)]
+    ica = FastICA(n_components=3)
+    Test_Ind_components=ica.fit_transform(normal_test_1)  # Reconstruct independ constituents 
+    Test_Ind_components=pd.DataFrame(Test_Ind_components)
+    mixing = ica.mixing_  # Get estimated mixing matrix
+    demixing=np.linalg.inv(mixing)
+    
+    
     '''
     
       Parameters 
@@ -175,21 +207,19 @@ if __name__ == "__main__":
     gamma=0.09
     epsilon=0.09
     bins = np.array(np.arange(1,100,50))
-    num_iterations=2
+    num_iterations=100
     train_size=2000
     delta=0.05
     #Model Initilization
-    init=random.uniform(0,1)
-    k_it={component:-1*(1-init)+1*init for component in Ind_components.columns}
+    
+    k_it={component:-1*(1-init)+1*init for (init,component) in zip([random.uniform(0,1) for component in Ind_components.columns],Ind_components.columns)}
     Q= np.array([0.1*np.random.randn(num_actions,num_components) for x in range(2*(num_bins)+1)])
     
-    
-    trained_Q=Q_train(num_iterations,train_size,epsilon)
     rewards={component:[] for component in Ind_components.columns}
     portf_return=[]
     equally_weighted=[]
     for t in range(train_size,len(return_df)):
-        print('{}'.format(t) +' out of {}'.format(len(return_df)-train_size))
+        print('{}'.format(t) +' out of {}'.format(len(return_df)))
         decision={component:0 for component in Ind_components.columns}
         for component in Ind_components.columns:
             return_component=Ind_components[component][t-1]
@@ -203,7 +233,8 @@ if __name__ == "__main__":
         actual_returns=opt.matrix(Ind_components.ix[t,:])
         portf_return.append(blas.dot(actual_returns,weights))
         equally_weighted.append(1/(np.shape(Ind_components)[1])*sum(actual_returns))
-        k_it=[np.sign(x) for x in weights]
+        k_it={component:np.sign(x) for (component,x) in zip(Ind_components.columns,weights)}
+        
         
 
 cumsum_eq_weight=pd.DataFrame(equally_weighted).cumsum()
