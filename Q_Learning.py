@@ -23,12 +23,13 @@ from scipy import signal
 from sklearn.decomposition import FastICA, PCA
 import random
 from math import *
+
 os.chdir('C:/Users/Makhtar Ba/Documents/GitHub/RL_portf_optimisation')
     
 from optimization import *
 
 import statsmodels
-
+from scipy.stats import bernoulli
 
 
         
@@ -36,18 +37,24 @@ import statsmodels
 
 ##### Q-learning
         
-def LocalizeState(returns, component):
+def initLocalizeState(component):
+    global granularity
     global Ind_components
     global k_it
-    count, division = np.histogram(Ind_components[component], bins=100)
-    bin_num=0
-    while returns>division[bin_num] and bin_num<100 :
-        bin_num+=1
-    bin_num=-1/2*(bin_num+100)*(k_it[component]-1)+bin_num*(k_it[component]+1)/2
-    return bin_num
+    range_test=max(Ind_components[component])-min(Ind_components[component])
+    number_state=int(range_test*granularity/np.std(Ind_components[component]))
+    division=[np.std(Ind_components[component])*i/granularity for i in range(number_state+1)]
+    return division
+
+def LocalizeState(component_return,component,sub_division):
+    global k_it
+    bin_num=np.searchsorted(sub_division[component],component_return)
+    bin_num=-1/2*(bin_num+len(sub_division[component]))*(k_it[component]-1)+bin_num*(k_it[component]+1)/2
+    
+    return int(bin_num)
 
     
-def Q_update(state,action, component,time):
+def Q_update(state,action, component,time,nu):
     '''
        This function is used to implement the updates of the value functions 
     '''
@@ -55,7 +62,6 @@ def Q_update(state,action, component,time):
     
     global Ind_components
     global Q
-    global nu
     global gamma
     global k_it
     global delta
@@ -74,11 +80,11 @@ def Q_update(state,action, component,time):
         average_return=division[state]
     '''
     #print(sum(demixing[component,:]),k_it[component]-action)
-    cost=log(1-delta*sum(demixing[component,:])*abs(k_it[component]-action))
+    index_component=list(Ind_components.columns).index(component)
+    cost=log(1-delta*sum(demixing[index_component,:])*abs(k_it[component]-action))
     reward=log(1+action*Ind_components[component][time+1])+cost
-    next_state=LocalizeState(reward,component)
-    
-    Q[state,action,component]=(1-nu)*Q[state,action,component]+nu*(reward+gamma*(max(Q[next_state,:,component])))
+    next_state=LocalizeState(reward,component,subdivision)
+    Q[component][action,state]=(1-nu)*Q[component][action,state]+nu*(reward+gamma*(max(Q[component][:,next_state])))
     
     return Q
     
@@ -112,21 +118,22 @@ def show_traverse(component):
 
 
 
-def Q_train(num_iterations,train,epsilon):
+def Q_train(num_iterations,train,epsilon,sub_division):
     global Ind_components
     global Q
     global k_it
+    global nu
     
     for iteration in range(num_iterations):  
         print ('{}'.format(iteration+1) +'out of {}'.format(num_iterations))
         for component in  Ind_components.columns:
+            
             for t in range(train):
                 return_component=Ind_components[component][t]
-                state=LocalizeState(return_component,component)
-                
-                if random.uniform(0,1)<epsilon:
+                state=LocalizeState(return_component,component,sub_division)
+                if random.uniform(0,1)<epsilon[iteration]:
                     
-                    action=-1*(1-np.argmax(Q[state,:,component]))+np.argmax(Q[state,:,component])
+                    action=-1*(1-np.argmax(Q[component][:,state]))+np.argmax(Q[component][:,state])
         
                     #Should serve to visualiwe the transitions but for now is useless
                     '''
@@ -140,7 +147,7 @@ def Q_train(num_iterations,train,epsilon):
                     rand=random.randint(0,1)
                     action=-1*(1-rand)+rand
                     
-                Q=Q_update(state,action, component,t)
+                Q=Q_update(state,action, component,t,nu[iteration,t])
                 k_it[component]=action
     return Q
 
@@ -149,15 +156,11 @@ def Q_train(num_iterations,train,epsilon):
 if __name__ == "__main__":
     os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
     return_df=pd.read_csv('returns_df_BD.csv',index_col=0)
-    Ind_components=pd.read_csv('Ind_components.csv',index_col=0)
+    Ind_components=pd.read_csv('meaned_Ind_components.csv',index_col=0)
+    test_demixing=pd.read_csv('Demixing_matrix.csv')
+    del test_demixing['Unnamed: 0']
+    demixing=np.array(test_demixing)
     
-    '''
-    
-    Setting up the ICA 
-    
-    '''
-    
-    ##########################################
     
     '''
     
@@ -165,34 +168,23 @@ if __name__ == "__main__":
     
     '''
     
-    ica = FastICA(n_components=5)
-    Test_Ind_components=ica.fit_transform(return_df)  # Reconstruct independ constituents 
-    Test_Ind_components=pd.DataFrame(Test_Ind_components)
-    mixing = ica.mixing_  # Get estimated mixing matrix
-    demixing=np.linalg.inv(mixing)
     
     corr_factors=np.corrcoef(Ind_components.transpose())
     corr_returns=np.corrcoef(return_df.transpose())
     cov_factors=np.cov(Ind_components.transpose())
     mean_factors=np.mean(Ind_components)
-    test_statistic= statsmodels.stats.diagnostic.acorr_ljungbox(Ind_components['0'])
+    #test_statistic= statsmodels.stats.diagnostic.acorr_ljungbox(Ind_components['0'])
+    '''
+       Test  choosing number of states
+    '''
+    '''
+    number_state=[]
+    for column in Ind_components.columns:
+        range_test=max(Ind_components[column])-min(Ind_components[column])
+        number_state.append(range_test*5/np.std(Ind_components[column]))
+    plt.plot(number_state)
+    '''
     
-    
-    plt.plot(return_df['AAPL'])
-    Test_Ind_components.describe()
-    test_corr_factors=np.corrcoef(Test_Ind_components.transpose())
-    test_corr_returns=np.corrcoef(return_df.transpose())
-    test_cov_factors=np.cov(Test_Ind_components.transpose())
-    test_mean_factors=np.mean(Test_Ind_components)
-    
-    plt.show()       
-    
-    normal_test_1=[np.random.multivariate_normal([1,1,1],np.eye(3)) for s in range(3)]
-    ica = FastICA(n_components=3)
-    Test_Ind_components=ica.fit_transform(normal_test_1)  # Reconstruct independ constituents 
-    Test_Ind_components=pd.DataFrame(Test_Ind_components)
-    mixing = ica.mixing_  # Get estimated mixing matrix
-    demixing=np.linalg.inv(mixing)
     
     
     '''
@@ -200,48 +192,69 @@ if __name__ == "__main__":
       Parameters 
      
     '''
-    nu=0.01
     num_bins=100
     num_components=np.shape(return_df)[1]
     num_actions=2
-    gamma=0.09
-    epsilon=0.09
+    gamma=1-0.01/365
     bins = np.array(np.arange(1,100,50))
-    num_iterations=100
+    num_iterations=20
     train_size=2000
-    delta=0.05
-    #Model Initilization
+    delta=0.00025
+    granularity=5
+    epsilon=[0.25/(k+1) for k in range(num_iterations)]
+    nu=np.array([[0.2*1/((1+0.01*k)*(i+1)) for k in  range(train_size)]for i in range(num_iterations)])
     
-    k_it={component:-1*(1-init)+1*init for (init,component) in zip([random.uniform(0,1) for component in Ind_components.columns],Ind_components.columns)}
-    Q= np.array([0.1*np.random.randn(num_actions,num_components) for x in range(2*(num_bins)+1)])
+    #Model Initilization
+    subdivision={component:0 for component in Ind_components.columns}
+    
+    for component in subdivision.keys():
+            subdivision[component]=initLocalizeState(component)
+    
+    #k_it={component:-1*(1-init)+1*init for (init,component) in zip(list(bernoulli.rvs(0.5,size=Ind_components.shape[1])),Ind_components.columns)}
+    k_it={component:-1*(1-int(init+0.5))+1*int(init+0.5) for (init,component) in zip([np.random.uniform(0,1) for size in Ind_components.columns],Ind_components.columns)}
+    
+    Q= {component: np.random.randn(num_actions,2*len(subdivision[component])) for component in Ind_components.columns}
     
     rewards={component:[] for component in Ind_components.columns}
     portf_return=[]
-    equally_weighted=[]
+
+    Q=Q_train(num_iterations,train_size,epsilon,subdivision)
+    asset_portf_return=[]
+    factor_portf_return=[]
+    asset_equally_weighted=[]
+    factor_equally_weighted=[]
+
     for t in range(train_size,len(return_df)):
         print('{}'.format(t) +' out of {}'.format(len(return_df)))
         decision={component:0 for component in Ind_components.columns}
         for component in Ind_components.columns:
             return_component=Ind_components[component][t-1]
-            state=LocalizeState(return_component,component)
-            action=-1*(1-np.argmax(Q[state,:,component]))+np.argmax(Q[state,:,component])
-            decision[component]=(Q[state,1,component]-Q[state,0,component])
+            state=LocalizeState(return_component,component,subdivision)
+            action=-1*(1-np.argmax(Q[component][:,state]))+np.argmax(Q[component][:,state])
+            decision[component]=(Q[component][1,state]-Q[component][0,state])
             rewards[component].append(log(1+(action-(1-action)*1)*Ind_components[component][t]))
-        portfolio=optimal_portfolio(Ind_components.ix[:t,:],decision)      
+        
+        portfolio=optimal_portfolio(Ind_components.ix[:t,:],decision,demixing)      
         weights=portfolio['x']
+        asset_weights=np.dot(weights.T,demixing)
         #print(np.shape(weights))
-        actual_returns=opt.matrix(Ind_components.ix[t,:])
-        portf_return.append(blas.dot(actual_returns,weights))
-        equally_weighted.append(1/(np.shape(Ind_components)[1])*sum(actual_returns))
+        factor_actual_returns=opt.matrix(Ind_components.ix[t,:])
+        asset_actual_returns=opt.matrix(return_df.ix[t,:])
+        asset_portf_return.append(np.dot(asset_actual_returns.T,(asset_weights).T)[0][0])
+        factor_portf_return.append(np.dot(factor_actual_returns,np.array(weights).T))
+        
+        asset_equally_weighted.append(1/(np.shape(Ind_components)[1])*sum(asset_actual_returns))
+        factor_equally_weighted.append(1/(np.shape(Ind_components)[1])*sum(factor_actual_returns))
+        
         k_it={component:np.sign(x) for (component,x) in zip(Ind_components.columns,weights)}
         
         
 
-cumsum_eq_weight=pd.DataFrame(equally_weighted).cumsum()
-cumsum_portf=pd.DataFrame(portf_return).cumsum()
+cumsum_eq_weight=pd.DataFrame(asset_equally_weighted).cumsum()
+cumsum_portf=pd.DataFrame(asset_portf_return).cumsum()
 
-plt.plot(equally_weighted)
-plt.plot(portf_return)
+plt.plot(asset_equally_weighted)
+plt.plot(asset_portf_return)
 plt.show()
 
 # Cumsums plots

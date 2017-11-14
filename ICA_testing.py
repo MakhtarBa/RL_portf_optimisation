@@ -16,9 +16,6 @@ from sklearn.decomposition import FastICA, PCA
 
 
 
-import Q_Learning
-import optimization
-
 os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
 
 with open('Tickers.txt') as tickers:
@@ -80,21 +77,25 @@ Setting up the ICA
 
 ##########################################
 return_df=return_df.transpose()
-
-ica = FastICA(n_components=len(return_df))
+ica = FastICA(n_components=return_df.shape[1])
 Ind_components = ica.fit_transform(return_df)  # Reconstruct independ constituents 
 mixing = ica.mixing_  # Get estimated mixing matrix
 unmixing=np.linalg.inv(mixing)
 
+ica_mean=np.array(ica.mean_.transpose()).reshape(1,len(ica.mean_.transpose()))
 
-reconstitution_ICA=ica.inverse_transform(Ind_components) #recompose the returns from the ICA transformation
-reconstitution_ICA=pd.DataFrame(reconstitution_ICA)
+ica_mean=np.tile(ica_mean,(len(return_df),1)) # put then mean in the correct format 
 
+test_Ind_components=Ind_components+(ica_mean).dot(unmixing)
+
+test_Ind_components=pd.DataFrame(test_Ind_components,columns=return_df.columns)
+plt.plot(test_Ind_components['AAPL'],color='orange')
+plt.plot(test_Ind_components['ABT'],color='orange')
+test_Ind_components.describe()
+test_Ind_components.to_csv('meaned_Ind_components.csv')
+ 
+reconstitution_ICA=test_Ind_components.dot(mixing)
 reconstitution_ICA.columns=return_df.columns
-
-# We can `prove` that the ICA model applies by reverting the unmixing.
-#assert np.allclose(data_df, np.dot(S_, A_.T) + ica.mean_)
-
 # For comparison, compute PCA
 pca = PCA(n_components=92)
 H = pca.fit_transform(return_df)  # Reconstruct signals based on orthogonal components
@@ -107,30 +108,13 @@ reconstitution_PCA.columns=return_df.columns
 # #############################################################################
 # Plot results
 
-plt.figure()
-
-models = [return_df, reconstitution_ICA, reconstitution_PCA]
-
-names = ['Observations (mixed signal)',
-         'ICA recovered signals',
-         'PCA recovered signals']
-colors = ['red', 'black', 'orange']
-
-for ii, (model, name) in enumerate(zip(models, names), 1):
-    plt.subplot(3,1, ii)
-    plt.title(name)
-    for sig, color in zip(model, colors):
-        print(sig)
-        plt.plot(sig, color=color)
-
-plt.subplots_adjust(0.09, 0.04, 0.94, 0.94, 0.26, 0.46)
-plt.show()
 
 # Comparison of the sumcum 
 
 cumsum_ICA=pd.DataFrame(columns=reconstitution_ICA.columns)
 cumsum_PCA=pd.DataFrame(columns=reconstitution_ICA.columns)
 cumsum_return=pd.DataFrame(columns=reconstitution_ICA.columns)
+
 
 for column in reconstitution_ICA.columns:
     cumsum_ICA[column]=reconstitution_ICA[column].cumsum()
