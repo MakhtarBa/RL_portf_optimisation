@@ -22,7 +22,7 @@ return_df=pd.read_csv('subset_return_df.csv')
 
 
 
-batch_size = 64 
+batch_size = 10 
 num_nodes = 2
 num_unrollings = 20
 rolling_window_size=100
@@ -84,14 +84,14 @@ with g.as_default():
         
         if i == 0:
             
-            output_ = output_data_feed[output_data_feed.shape[0]]
-            a_ = tf.concat(1,[tf.matmul(input_data[i],U),output_*W])+b
+            output_ = tf.sign(input_data[0][0][look_back-1])
+            a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=0)+b
             h_output = tf.nn.softmax(a_)
             output_after= tf.matmul(h_output,V)+c    
                         
         else:
             
-            a_ = tf.concat(1,[tf.matmul(input_data[i],U),output_after*W])+b
+            a_ = tf.concat([tf.matmul(input_data[i],U),output_after*W])+b
             h_output = tf.nn.softmax(a_)
             output_after= tf.matmul(h_output,V)+c    
             
@@ -126,40 +126,35 @@ with g.as_default():
     gradients,var=zip(*optimizer.compute_gradients(loss))
     opt=optimizer.apply_gradients(zip(gradients_clipped,var),global_step=global_step)
     '''
-    time
-    feed_dict={input_data[i]:a[]}
-    
-    grad_vals=sess.run(grad,feed_dict={input_data:,output_data_feed:,})
-    grad_=sess.run(grad_calcul, feed_dict={x1_tf:input_1 ,x2_tf:input_2,x3_tf:input_3})     
-    print(grad_vals)
-    print(grad_)
-    update=sess.run(tf.norm(grad_vals[0]*learning_rate))
-    test=sess.run(tf.norm(W1_tf)*0.0000000001)
-    
-    count=0     
-    loss_value=[]
-    
-    while(count<10):
-        count+=1
-        grad=tf.gradients(loss3_tf,W1_tf)
-        '''
-        input_1=tf.reshape(tf.concat((a[0],[1]),axis=0),[1,4])
-        input_2=tf.reshape(tf.concat((a[1],[1]),axis=0),[1,4]) 
-        input_3=tf.reshape(tf.concat((a[2],[1]),axis=0),[1,4])
-        '''
+    time=1000
+    for j in range(batch_size):            
+        time=time+j
+        feed_input={input_data[i]:a[time-num_unrollings+i] for i in range(num_unrollings)}
+        grad_vals=sess.run(grad,feed_dict=feed_input)
+        grad_=sess.run(grad_calcul, feed_dict=feed_input)     
+        print(grad_vals)
+        print(grad_)
+        update=sess.run(tf.norm(grad_vals[0]*learning_rate))
         
-        input_1=np.concatenate((a[0],[1])).reshape(1,4)
-        input_2=np.concatenate((a[1],[1])).reshape(1,4)
-        input_3=np.concatenate((a[2],[1])).reshape(1,4)
+        count=0     
+        loss_value=[]
         
-        grad_operations_val , loss_tf_val, grad_calcul_val = sess.run([grad_operations, loss3_tf, grad_calcul], feed_dict={x1_tf:input_1 ,x2_tf:input_2,x3_tf:input_3})
-        grad_val=sess.run(grad, feed_dict={x1_tf:input_1 ,x2_tf:input_2,x3_tf:input_3})
-        
-        update=sess.run(tf.norm(grad_val[0]*learning_rate))
-        W2_tf=tf.add(W2_tf,grad_val[0]*0)
-        loss_value.append(loss_tf_val)
-        print(count)
-        
+        while(count<10):
+            count+=1
+            grad=tf.gradients(loss,W1_tf)
+            '''
+            input_1=tf.reshape(tf.concat((a[0],[1]),axis=0),[1,4])
+            input_2=tf.reshape(tf.concat((a[1],[1]),axis=0),[1,4]) 
+            input_3=tf.reshape(tf.concat((a[2],[1]),axis=0),[1,4])
+            '''
+            grad_operations_val , loss_tf_val, grad_calcul_val = sess.run([grad_operations, loss, grad_calcul], feed_dict=feed_input)
+            grad_val=sess.run(grad, feed_dict=feed_input)
+            
+            update=sess.run(tf.norm(grad_val[0]*learning_rate))
+            W2_tf=tf.add(W2_tf,grad_val[0]*0)
+            loss_value.append(loss_tf_val)
+            print(count)
+            
 
 
 
@@ -169,7 +164,7 @@ with g.as_default():
     val_probs = tf.nn.softmax(val_output_after)
     '''
     #add init op to the graph
-    init = tf.initialize_all_variables()
+    #init = tf.initialize_all_variables()
     
     '''
 num_steps=50001
