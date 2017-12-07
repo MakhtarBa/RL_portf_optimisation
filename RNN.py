@@ -22,16 +22,17 @@ return_df=pd.read_csv('subset_return_df.csv')
 
 
 
-batch_size = 10 
+batch_size = 10
 num_nodes = 2
-num_unrollings = 20
+num_unrollings =  10
 rolling_window_size=100
-look_back=3# number of days to lookback, length of the input time series
+look_back=5# number of days to lookback, length of the input time series
 a=np.array([return_df['AAPL'][j:j+look_back].values for j in range(len(return_df['AAPL'])-look_back)],np.float32)
 delta=0.2 
-time=1000
+time=500
     
 g = tf.Graph()
+
 #if forced meaning that we put the real signal in the inout of each layer 
 with g.as_default():
     #lets define the input variables containers 
@@ -140,7 +141,7 @@ with g.as_default():
     
     for j in range(batch_size):            
         time=time+j
-        feed_input={input_data[i]:a[time-num_unrollings+i].reshape(1,3) for i in range(num_unrollings)}
+        feed_input={input_data[i]:a[time-num_unrollings+i].reshape(1,look_back) for i in range(num_unrollings)}
         grad_vals=sess.run(grad,feed_dict=feed_input)
         grad_, loss_tf_val=sess.run([grad_calcul, loss], feed_dict=feed_input)     
         loss_value.append(loss_tf_val)
