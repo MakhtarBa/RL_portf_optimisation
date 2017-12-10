@@ -23,12 +23,12 @@ from keras.layers import Dense
 from keras.layers import LSTM
 from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
-
+import time as tm
 #%%
 os.chdir('/Users/Drogon/Documents/Columbia/Courses/Fall_2017/Big_Data_Choromanski/data/data')
 
 #Initializing the dataset 
-data=pd.read_csv('AAPL.txt', sep=",")
+data=pd.read_csv('GM.txt', sep=",")
 data['DATE']=data['DATE'].apply(lambda x : str(x))
 data['DATE']=data['DATE'].apply(lambda x : datetime.datetime.strptime(x,'%Y%m%d'))
 
@@ -47,17 +47,21 @@ return_df = (data_df - data_df.shift(1))/data_df
 #%%
 column_name = ' OPEN'
 
-number_batch = 500
-num_nodes = 2
+number_batch = 100
+train_num = 3000
+num_nodes = 2 #no. of neurons (makhtar)
 num_unrollings =  10
-rolling_window_size = 100
+#rolling_window_size = 100
 look_back = 20 # number of days to lookback, length of the input time series
+#a is inmput data
 a=np.array([return_df[column_name][j:j+look_back].values for j in range(len(return_df[column_name])-look_back)],np.float32)
-delta=0.2
-time=100
+delta=0.02 #transaction cost (bps)
+time=100 #start_time
 
 
-num_epochs = 500
+num_epochs = 5
+
+time1 = tm.time()
     
 g = tf.Graph()
 
@@ -65,7 +69,7 @@ g = tf.Graph()
 with g.as_default():
     #lets define the input variables containers 
     
-    reg_tf = tf.constant(0.01)
+    reg_tf = tf.constant(0.0) #regularization constant
 
     input_data = []
     for i in range(num_unrollings):
@@ -109,28 +113,31 @@ with g.as_default():
     # Recheck the dimensions of the multiplications of matrices accrding to the paper 
     '''
     #when training truncate the gradients after num_unrollings
-    print(tf.reshape(tf.sign(input_data[0][0][0]),[1,1]))
-    tensor_real_returns=tf.reshape(input_data[0][0][0],[1,1])
+    #print(tf.reshape(tf.sign(input_data[0][0][0]),[1,1]))
+    tensor_real_returns=tf.reshape(input_data[0][0][look_back-1],[1,1]) #appending later, tensor shape preserved
     for i in range(num_unrollings):
         
         if i == 0:
-            output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][0]), tf.float32),[1,1])        
+            #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
+            output_data_feed=tf.reshape(tf.sign(input_data[0][0][look_back-1]),[1,1])        
             output_ = tf.sign(input_data[0][0][look_back-1])
             a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
             h_output = tf.nn.softmax(a_)
-            output_after= tf.matmul(h_output,V)+c    
-            
+            output_after= tf.nn.softmax(tf.matmul(h_output,V)+c)
+            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
         else:
-            
             a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
             h_output = tf.nn.softmax(a_)
-            output_after= tf.matmul(h_output,V)+c    
+            output_after= tf.nn.softmax(tf.matmul(h_output,V)+c)    
+            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
+            
         #print(output_after.dtype,output_data_feed.dtype)
-        output_data_feed=tf.concat((output_data_feed,output_after), axis=0)
+        signal= 2*tf.floor((output_after+0.5))- 1
+        output_data_feed=tf.concat((output_data_feed,signal), axis=0)
         tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
     
     #print(tensor_real_returns,output_data_feed)
-    observed_returns=np.multiply(output_data_feed[1:],tensor_real_returns[0:num_unrollings])+delta*np.abs(np.array(output_data_feed[1:])-np.array(output_data_feed[0:-1]))
+    observed_returns=np.multiply(output_data_feed[0:-1],tensor_real_returns[1:])+delta*np.abs(np.array(output_data_feed[1:])-np.array(output_data_feed[0:-1]))
     print(observed_returns.shape)
     
     #train
@@ -148,11 +155,11 @@ with g.as_default():
     loss = -sharpe + R2
     
     learning_rate = tf.train.exponential_decay(
-        learning_rate=2.5,global_step=global_step, decay_steps=5000, decay_rate=0.1, staircase=True)
+        learning_rate=100000.0,global_step=global_step, decay_steps=5000, decay_rate=0.1, staircase=True)
      
     optimizer=tf.train.GradientDescentOptimizer(learning_rate)
     grad_operations=optimizer.compute_gradients(loss,var_list=[U,W,b,V,c])
-    gradients_clipped, _ = tf.clip_by_global_norm(grad_operations, 1.25)
+    #gradients_clipped, _ = tf.clip_by_global_norm(grad_operations, 1.25)
     
     grad_calcul=optimizer.apply_gradients(grad_operations)
     grad=tf.gradients(loss,[U,W,b,V,c])
@@ -167,59 +174,108 @@ with g.as_default():
     opt=optimizer.apply_gradients(zip(gradients_clipped,var),global_step=global_step)
     '''
     
-    init = tf.global_variables_initializer()
+    init2 = tf.global_variables_initializer()     
     np.set_printoptions(precision=3)
 
-     
-    sess=tf.Session(graph=g)
-    sess.run(init)
 
-    global_loss_value = []
-    global_sharpe_value = []
-        
-    for epoch_i in range((num_epochs)):
-        
-        loss_value=[]
-        sharpe_value = []
-        
-        epoch_time = time
+sess=tf.Session(graph=g)
+sess.run(init2)
+
+global_loss_value = []
+global_sharpe_value = []
+global_last_signal_value = []    
+global_last_output_value = []        
+for epoch_i in range((num_epochs)):
     
-        for j in range(number_batch):            
-            epoch_time=epoch_time+1
-            feed_input={input_data[i]:a[epoch_time-num_unrollings+i].reshape(1,look_back) for i in range(num_unrollings)}
-            #grad_vals=sess.run(grad,feed_dict=feed_input)
-    
-            grad_, loss_tf_val, temp_sharpe = sess.run([grad_calcul, loss, sharpe], feed_dict=feed_input)     
+    loss_value=[]
+    sharpe_value = []
+    last_signal_value = []
+    last_output_value = []  
+    epoch_time = time
+
+    for j in range(number_batch): 
+        global_step=global_step+1
+        epoch_time=epoch_time+1
+        feed_input={input_data[i]:a[epoch_time-num_unrollings+i+j].reshape(1,look_back) for i in range(num_unrollings)}
+        grad_vals=sess.run(grad,feed_dict=feed_input)
+
+        #grad_, loss_tf_val, temp_sharpe, last_signal, last_output= sess.run([grad_calcul, loss, sharpe, output_data_feed[num_unrollings - 1],output_after[0][0]], feed_dict=feed_input)     
+        temp_sharpe = sess.run(sharpe,feed_dict=feed_input)
+        loss_tf_val = sess.run(loss,feed_dict=feed_input)
+        last_signal = sess.run(output_data_feed[num_unrollings - 1],feed_dict=feed_input)
+        last_output = sess.run(output_after[0][0],feed_dict=feed_input)
+        
+        sess.run(grad_calcul, feed_dict=feed_input)
+        grad_ = sess.run(grad, feed_dict=feed_input)
+        
+        
+        loss_value.append(loss_tf_val)
+        sharpe_value.append(temp_sharpe)
+        last_signal_value.append(last_signal)
+        last_output_value.append(last_output)
+        print(grad_[0])
+        #print(grad_)
+        #update=sess.run(tf.norm(grad_vals[0]*learning_rate))
+        '''
+        count=0     
+        
+        while(count<10):
+            count+=1
+            grad=tf.gradients(loss,[U,W,b,V,c])
+
+            grad_operations_val , loss_tf_val, grad_calcul_val = sess.run([grad_operations, loss, grad_calcul], feed_dict=feed_input)
+            grad_val=sess.run(grad, feed_dict=feed_input)
+
             loss_value.append(loss_tf_val)
-            sharpe_value.append(temp_sharpe)           
-            #print(grad_vals)
-            #print(grad_)
-            #update=sess.run(tf.norm(grad_vals[0]*learning_rate))
-            '''
-            count=0     
-            
-            while(count<10):
-                count+=1
-                grad=tf.gradients(loss,[U,W,b,V,c])
-    
-                grad_operations_val , loss_tf_val, grad_calcul_val = sess.run([grad_operations, loss, grad_calcul], feed_dict=feed_input)
-                grad_val=sess.run(grad, feed_dict=feed_input)
-    
-                loss_value.append(loss_tf_val)
-                update=sess.run(tf.norm(grad_val[0]*learning_rate))
-            '''    
-                  
-        global_loss_value.append(loss_value)
-        global_sharpe_value.append(sharpe_value)
-        
+            update=sess.run(tf.norm(grad_val[0]*learning_rate))
+        '''    
+              
+    global_loss_value.append(loss_value)
+    global_sharpe_value.append(sharpe_value)
+    global_last_signal_value.append(last_signal_value)
+    global_last_output_value.append(last_output_value)
+time2 = tm.time()     
+
+#%%
+   
+print(time2 - time1)
+
 #%%
 
-i = 20 - 1
+def make_list(input):
+    temp = [input[i][0] for i in range(len(input))]
+    return temp
 
+#%%
+dirty_sharpe_value_dict = {}
+temp_vals = []
+#%%
+
+i = num_epochs - 1
+#%%
+i = 1- 1
+#%%
 clean_sharpe_value = [sharpe_value_temp for sharpe_value_temp in global_sharpe_value[i] if sharpe_value_temp <= 2]
 dirty_sharpe_value = global_sharpe_value[i]
+
+graph_list = make_list(dirty_sharpe_value)
+
+
+temp_vals.append(global_last_signal_value[i])
+
+'''temp_vals = temp_vals[0]
+temp_vals = (make_list(temp_vals))
+'''
+
+#%%
+
+
+
+plt.plot(global_last_output_value[i])
 
 #%%
 
 sharpe_mean = [np.mean(sharpe_series) for sharpe_series in global_sharpe_value]
 sharpe_std = [np.std(sharpe_series) for sharpe_series in global_sharpe_value]
+
+
