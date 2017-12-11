@@ -29,6 +29,9 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 
 
+#%%
+def sigmoid(x):
+    return 1/(1+tf.exp(-x))
 
 #%%
 os.chdir('/Users/Drogon/Documents/Columbia/Courses/Fall_2017/Big_Data_Choromanski/data/data')
@@ -58,11 +61,11 @@ column_name = ' OPEN'
 number_batch = 100
 train_num = 3000
 num_nodes = 2 #no. of neurons (makhtar)
-num_unrollings =  10
+num_unrollings =  2
 #rolling_window_size = 100
 look_back = 20 # number of days to lookback, length of the input time series
 #a is inmput data
-a=np.array([return_df[column_name][j:j+look_back].values for j in range(len(return_df[column_name])-look_back)],np.float32)
+a=np.array([return_df[column_name][j:j+look_back].values for j in range(1, len(return_df[column_name])-look_back)],np.float32)
 delta=0.02 #transaction cost (bps)
 time=100 #start_time
 
@@ -107,7 +110,8 @@ with g.as_default():
     #Variables
     #input matrix
     
-    U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-0.1,0.1))
+    #U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-0.1,0.1))
+    U = tf.Variable(tf.zeros([look_back,num_nodes]))
     
     #recurrent matrix multiplies previous output
     #W = tf.Variable(tf.truncated_normal([1,num_nodes],-0.1,0.1))
@@ -118,7 +122,8 @@ with g.as_default():
  
     #output matrix wieths after the activation function
     
-    V = tf.Variable(tf.truncated_normal([2*num_nodes,1],-0.1,0.1))
+    #V = tf.Variable(tf.truncated_normal([2*num_nodes,1],-0.1,0.1))
+    V = tf.Variable(tf.zeros([2*num_nodes,1]))
     c = tf.Variable(tf.zeros([1,1]))
  
     #model
@@ -138,7 +143,7 @@ with g.as_default():
     #print(tf.reshape(tf.sign(input_data[0][0][0]),[1,1]))
     tensor_real_returns=tf.reshape(input_data[0][0][look_back-1],[1,1]) #appending later, tensor shape preserved
     for i in range(num_unrollings):
-        
+        '''
         if i == 0:
             #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
             output_data_feed=tf.reshape(tf.sign(input_data[0][0][look_back-1]),[1,1])        
@@ -152,6 +157,22 @@ with g.as_default():
             h_output = tf.nn.softmax(a_)
             output_after= tf.nn.softmax(tf.matmul(h_output,V)+c)    
             #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
+        '''
+        
+        if i == 0:
+            #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
+            output_data_feed=tf.reshape(tf.sign(input_data[0][0][look_back-1]),[1,1])        
+            output_ = tf.sign(input_data[0][0][look_back-1])
+            a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
+            h_output = sigmoid(a_)
+            output_after= sigmoid(tf.matmul(h_output,V)+c)
+            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
+        else:
+            a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
+            h_output = sigmoid(a_)
+            output_after= sigmoid(tf.matmul(h_output,V)+c)
+            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
+                
             
         #print(output_after.dtype,output_data_feed.dtype)
         signal= 2*tf.floor((output_after+0.5))- 1
@@ -159,13 +180,15 @@ with g.as_default():
         tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
     
     #print(tensor_real_returns,output_data_feed)
-    observed_returns=np.multiply(output_data_feed[0:-1],tensor_real_returns[1:])+delta*np.abs(np.array(output_data_feed[1:])-np.array(output_data_feed[0:-1]))
+    observed_returns=tf.multiply(output_data_feed[0:-1],tensor_real_returns[1:])+delta*tf.abs(tf.subtract(output_data_feed[1:],output_data_feed[0:-1]))
+    
     print(observed_returns.shape)
     
     #train
  
     #log likelihood loss
-    global_step = tf.Variable(0)
+    #global_step = tf.Variable(10)
+    global_step = tf.constant(10)
     L2_loss = tf.nn.l2_loss(U)
     
     #loss = -1*tf.reduce_mean(observed_returns)+reg_tf*L2_loss
@@ -174,22 +197,23 @@ with g.as_default():
     sharpe = mean/tf.sqrt(variance) 
     R2 = reg_tf*L2_loss
     
-    loss = -sharpe + R2
+    loss = tf.reduce_sum(observed_returns)
+    #-mean # + R2
     
     learning_rate = tf.train.exponential_decay(
-        learning_rate=1e-4,global_step=global_step, decay_steps=10, decay_rate=0.1, staircase=True)
+        learning_rate=10e1 ,global_step=global_step, decay_steps=5, decay_rate=0.1, staircase=True)
      
-    #optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
-    optimizer=tf.train.GradientDescentOptimizer(learning_rate)
-    grad_compute =optimizer.compute_gradients(loss) #,var_list=[U,W,b,V,c])
+    optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+    #optimizer=tf.train.GradientDescentOptimizer(learning_rate)
+    #grad_compute =optimizer.compute_gradients(loss) #,var_list=[U,W,b,V,c])
     #gradients_clipped, _ = tf.clip_by_global_norm(grad_operations, 1.25)
     
-    grad_apply=optimizer.apply_gradients(grad_compute)
+    #grad_apply=optimizer.apply_gradients(grad_compute)
     #grad=tf.gradients(loss,[U,W,b,V,c])
 
     #variable_summaries(W)
-    mean = tf.reduce_mean(W)
-    tf.summary.scalar('mean', mean)
+    W_mean = tf.reduce_mean(W)
+    tf.summary.scalar('mean', W_mean)
     
     #optimizer
     '''
@@ -226,21 +250,36 @@ with g.as_default():
         epoch_time = time
     
         for j in range(number_batch): 
-            global_step=global_step+1
+            #global_step=global_step+1
             epoch_time=epoch_time+1
             feed_input={input_data[i]:a[epoch_time-num_unrollings+i+j].reshape(1,look_back) for i in range(num_unrollings)}
             #grad_vals=sess.run(grad,feed_dict=feed_input)
-    
+            
+            
+            #print('input data = ', feed_input)
+            print('U = ', sess.run(U))
+            print('W = ', sess.run(W))
+            print('b = ', sess.run(b))
+            print('V = ', sess.run(V))
+            print('c = ', sess.run(c))
+            
+            print('mean of W = ', sess.run(tf.reduce_mean(W)))
+            print('learning rate = ', sess.run(learning_rate))  
+            print('output = ', sess.run(observed_returns,feed_dict=feed_input))
+            
             #grad_, loss_tf_val, temp_sharpe, last_signal, last_output= sess.run([grad_calcul, loss, sharpe, output_data_feed[num_unrollings - 1],output_after[0][0]], feed_dict=feed_input)     
             temp_sharpe = sess.run(sharpe,feed_dict=feed_input)
             loss_tf_val = sess.run(loss,feed_dict=feed_input)
+            
+            print('Loss = ', loss_tf_val)
+            
             last_signal = sess.run(output_data_feed[num_unrollings - 1],feed_dict=feed_input)
             last_output = sess.run(output_after[0][0],feed_dict=feed_input)
             summary=sess.run(merged,feed_dict=feed_input)
             #garb, grad_ =sess.run([optimizer, grad],  feed_dict=feed_input)
-            grad_=sess.run([grad_apply],  feed_dict=feed_input)
+            #grad_=sess.run([grad_apply],  feed_dict=feed_input)
             #grad_ = sess.run(grad_operations, feed_dict=feed_input)
-            
+            sess.run(optimizer, feed_dict=feed_input)
             
             loss_value.append(loss_tf_val)
             sharpe_value.append(temp_sharpe)
