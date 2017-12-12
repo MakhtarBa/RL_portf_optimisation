@@ -40,6 +40,10 @@ def sigmoid_modified(w,center,b_):
 def lrelu(x, alpha):
   return tf.nn.relu(x) - alpha * tf.nn.relu(-x)
 
+def tanh(x):
+  #return (tf.exp(x)-tf.exp(-x))/(tf.exp(x)+tf.exp(-x))
+   return 2*sigmoid(2*x)-1 
+
 #%%
 os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
 
@@ -117,22 +121,24 @@ with g.as_default():
     #Variables
     #input matrix
     
-    U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-0.1,0.1))
+    U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-2,2))
     #U = tf.Variable(tf.zeros([look_back,num_nodes]))
     
     #recurrent matrix multiplies previous output
-    W = tf.Variable(tf.truncated_normal([1,num_nodes],-0.1,0.1))
+    W = tf.Variable(tf.truncated_normal([1,num_nodes],-2,2))
     #W = tf.Variable(tf.zeros([1,num_nodes]))
     
     #bias vector
-    b = tf.Variable(tf.random_uniform([1,2*num_nodes],-0.9,0.9))
- 
+    #b = tf.Variable(tf.truncated_normal([1,2*num_nodes],-0.5,0.5))
+    b = tf.Variable(tf.zeros([1,2*num_nodes]))
+     
     #output matrix wieths after the activation function
     
     #V = tf.Variable(tf.truncated_normal([2*num_nodes,1],-0.1,0.1))
     V = tf.Variable(tf.zeros([2*num_nodes,1]))
-    c = tf.Variable(tf.random_uniform([1,1],-0.9,0.9))
- 
+    #c = tf.Variable(tf.truncated_normal([1,1],-0.5,0.5))
+    c = tf.Variable(tf.zeros([1,1]))
+    
     #model
     
     # Recheck the dimensions of the multiplications of matrices accrding to the paper 
@@ -147,14 +153,14 @@ with g.as_default():
             output_data_feed=tf.reshape(tf.sign(input_data[0][0][look_back-1]),[1,1])        
             output_ = tf.sign(input_data[0][0][look_back-1])
             a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
-            h_output = sigmoid(a_)
-            output_after= sigmoid(tf.matmul(h_output,V)+c)
+            h_output = tanh(a_)
+            output_after= tanh(tf.matmul(h_output,V)+c)
             #output_after= tf.matmul(h_output,V)+c
             #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
         else:
             a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
-            h_output = sigmoid(a_)
-            output_after= sigmoid(tf.matmul(h_output,V)+c)
+            h_output = tanh(a_)
+            output_after= tanh(tf.matmul(h_output,V)+c)
             #output_after= tf.matmul(h_output,V)+c
             #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
                 
@@ -169,8 +175,8 @@ with g.as_default():
         tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
         '''
         
-        signal= sigmoid_modified(output_after,0.5,100.0)
-        output_data_feed=tf.concat((output_data_feed,signal), axis=0)
+        #signal= sigmoid_modified(output_after,0.5,100.0)
+        output_data_feed=tf.concat((output_data_feed,output_after), axis=0)
         tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
         
     #mean=tf.reduce_mean(output_data)    
@@ -196,7 +202,7 @@ with g.as_default():
     #-mean # + R2
     
     learning_rate = tf.train.exponential_decay(
-        learning_rate=1e-2 ,global_step=global_step, decay_steps=5000, decay_rate=0.1, staircase=True)
+        learning_rate=1e-3 ,global_step=global_step, decay_steps=5, decay_rate=0.1, staircase=True)
      
     #optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(loss,global_step=global_step)
     optimizer=tf.train.GradientDescentOptimizer(learning_rate)
