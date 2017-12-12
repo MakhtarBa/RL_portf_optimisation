@@ -31,10 +31,14 @@ FLAGS = flags.FLAGS
 #%%
 def sigmoid(x):
     return 1/(1+tf.exp(-x))
-
+def relu_modified(x):
+    return (tf.exp(x)-1)
 
 def sigmoid_modified(w,center,b_):
     return (tf.exp(b_*((w-center)/center))/(1+tf.exp(b_*(w-center)/center))-center)/(1/(1+tf.exp(-b_))-center)
+
+def lrelu(x, alpha):
+  return tf.nn.relu(x) - alpha * tf.nn.relu(-x)
 
 #%%
 os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
@@ -61,7 +65,7 @@ return_df = (data_df - data_df.shift(1))/data_df
 #%%
 column_name = ' OPEN'
 
-number_batch = 100
+number_batch = 200
 train_num = 3000
 num_nodes = 2 #no. of neurons (makhtar)
 num_unrollings =  2
@@ -113,54 +117,30 @@ with g.as_default():
     #Variables
     #input matrix
     
-    #U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-0.1,0.1))
-    U = tf.Variable(tf.zeros([look_back,num_nodes]))
+    U = tf.Variable(tf.truncated_normal([look_back,num_nodes],-0.1,0.1))
+    #U = tf.Variable(tf.zeros([look_back,num_nodes]))
     
     #recurrent matrix multiplies previous output
-    #W = tf.Variable(tf.truncated_normal([1,num_nodes],-0.1,0.1))
-    W = tf.Variable(tf.zeros([1,num_nodes]))
+    W = tf.Variable(tf.truncated_normal([1,num_nodes],-0.1,0.1))
+    #W = tf.Variable(tf.zeros([1,num_nodes]))
     
     #bias vector
-    b = tf.Variable(tf.zeros([1,2*num_nodes]))
+    b = tf.Variable(tf.random_uniform([1,2*num_nodes],-0.9,0.9))
  
     #output matrix wieths after the activation function
     
     #V = tf.Variable(tf.truncated_normal([2*num_nodes,1],-0.1,0.1))
     V = tf.Variable(tf.zeros([2*num_nodes,1]))
-    c = tf.Variable(tf.zeros([1,1]))
+    c = tf.Variable(tf.random_uniform([1,1],-0.9,0.9))
  
     #model
-    '''
-    def RNN(input_,o_input):
-        global W
-        
-        a = tf.concat(1,[tf.matmul(input_,U),o_input*W)])+b
-        h_output = tf.nn.tanh(a)
-        o_out = tf.matmul(h_output,V)+c
-        
-        return o_out
     
     # Recheck the dimensions of the multiplications of matrices accrding to the paper 
-    '''
     #when training truncate the gradients after num_unrollings
     #print(tf.reshape(tf.sign(input_data[0][0][0]),[1,1]))
     tensor_real_returns=tf.reshape(input_data[0][0][look_back-1],[1,1]) #appending later, tensor shape preserved
     for i in range(num_unrollings):
-        '''
-        if i == 0:
-            #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
-            output_data_feed=tf.reshape(tf.sign(input_data[0][0][look_back-1]),[1,1])        
-            output_ = tf.sign(input_data[0][0][look_back-1])
-            a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
-            h_output = tf.nn.softmax(a_)
-            output_after= tf.nn.softmax(tf.matmul(h_output,V)+c)
-            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
-        else:
-            a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
-            h_output = tf.nn.softmax(a_)
-            output_after= tf.nn.softmax(tf.matmul(h_output,V)+c)    
-            #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
-        '''
+
         
         if i == 0:
             #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
@@ -169,19 +149,31 @@ with g.as_default():
             a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
             h_output = sigmoid(a_)
             output_after= sigmoid(tf.matmul(h_output,V)+c)
+            #output_after= tf.matmul(h_output,V)+c
             #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
         else:
             a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
             h_output = sigmoid(a_)
             output_after= sigmoid(tf.matmul(h_output,V)+c)
+            #output_after= tf.matmul(h_output,V)+c
             #output_after= 2*tf.cast((output_after+0.5),tf.int32)- 1 #tf.cast(x, tf.int32)
                 
-            
+        '''
+           sigmoid version
+        '''
+        '''
         #print(output_after.dtype,output_data_feed.dtype)
+        signal= sigmoid_modified(output_after,0.5,100.0)
+        
+        output_data_feed=tf.concat((output_data_feed,signal), axis=0)
+        tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
+        '''
+        
         signal= sigmoid_modified(output_after,0.5,100.0)
         output_data_feed=tf.concat((output_data_feed,signal), axis=0)
         tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
-    
+        
+    #mean=tf.reduce_mean(output_data)    
     #print(tensor_real_returns,output_data_feed)
     observed_returns=tf.multiply(output_data_feed[0:-1],tensor_real_returns[1:])+delta*tf.abs(tf.subtract(output_data_feed[1:],output_data_feed[0:-1]))
     
@@ -190,7 +182,7 @@ with g.as_default():
     #train
  
     #log likelihood loss
-    global_step = tf.Variable(10)
+    #global_step = tf.Variable(10)
     global_step = tf.Variable(0,trainable=False)
     L2_loss = tf.nn.l2_loss(U)
     
@@ -200,19 +192,24 @@ with g.as_default():
     sharpe = mean/tf.sqrt(variance) 
     R2 = reg_tf*L2_loss
     
-    loss = tf.reduce_sum(observed_returns)
+    loss = -sharpe
     #-mean # + R2
     
     learning_rate = tf.train.exponential_decay(
-        learning_rate=1e-2 ,global_step=global_step, decay_steps=5, decay_rate=0.1, staircase=True)
+        learning_rate=1e-2 ,global_step=global_step, decay_steps=5000, decay_rate=0.1, staircase=True)
      
-    optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(loss,global_step=global_step)
-    #optimizer=tf.train.GradientDescentOptimizer(learning_rate)
-    #grad_compute =optimizer.compute_gradients(loss) #,var_list=[U,W,b,V,c])
+    #optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(loss,global_step=global_step)
+    optimizer=tf.train.GradientDescentOptimizer(learning_rate)
+    grad_compute =optimizer.compute_gradients(loss) #,var_list=[U,W,b,V,c])
     #gradients_clipped, _ = tf.clip_by_global_norm(grad_operations, 1.25)
     
-    #grad_apply=optimizer.apply_gradients(grad_compute)
-    #grad=tf.gradients(loss,[U,W,b,V,c])
+    grad_apply=optimizer.apply_gradients(grad_compute)
+    grad_U=tf.gradients(loss,[U])
+    grad_V=tf.gradients(loss,[V])
+    grad_W=tf.gradients(loss,[W])
+    grad_b=tf.gradients(loss,[b])
+    grad_c=tf.gradients(loss,[c])
+    
 
     #variable_summaries(W)
     W_mean = tf.reduce_mean(W)
@@ -234,8 +231,7 @@ with g.as_default():
     
     merged=tf.summary.merge_all()
     
-    graph_writer = tf.summary.FileWriter(summaries_dir + '/train',
-                                      sess.graph)
+    graph_writer = tf.summary.FileWriter(summaries_dir + '/train',sess.graph)
     
     
     sess.run(init2)
@@ -261,12 +257,12 @@ with g.as_default():
             
             #print('input data = ', feed_input)
             print('U = ', sess.run(U))
-            print('W = ', sess.run(W))
-            print('b = ', sess.run(b))
+            #print('W = ', sess.run(W))
+            #print('b = ', sess.run(b))
             print('V = ', sess.run(V))
             print('c = ', sess.run(c))
             
-            print('mean of W = ', sess.run(tf.reduce_mean(W)))
+            #print('mean of W = ', sess.run(tf.reduce_mean(W)))
             print('learning rate = ', sess.run(learning_rate))  
             print('output = ', sess.run(observed_returns,feed_dict=feed_input))
             
@@ -279,31 +275,29 @@ with g.as_default():
             last_signal = sess.run(output_data_feed[num_unrollings - 1],feed_dict=feed_input)
             last_output = sess.run(output_after[0][0],feed_dict=feed_input)
             summary=sess.run(merged,feed_dict=feed_input)
-            #garb, grad_ =sess.run([optimizer, grad],  feed_dict=feed_input)
-            #grad_=sess.run([grad_apply],  feed_dict=feed_input)
+            garb =sess.run(grad_compute,  feed_dict=feed_input)
+            
+            grad_=sess.run([grad_apply],  feed_dict=feed_input)
+            grad_c_val=sess.run(grad_c,  feed_dict=feed_input)
+            grad_b_val=sess.run(grad_b,  feed_dict=feed_input)
+            grad_U_val=sess.run(grad_U,  feed_dict=feed_input)
+            grad_V_val=sess.run(grad_V,  feed_dict=feed_input)
+            grad_W_val=sess.run(grad_W,  feed_dict=feed_input)
+            
             #grad_ = sess.run(grad_operations, feed_dict=feed_input)
-            sess.run(optimizer, feed_dict=feed_input)
+            #sess.run(optimizer, feed_dict=feed_input)
+            print('gradient_c = ', grad_c_val)
+            print('gradient_U = ', grad_U_val)
+            print('gradient_V = ', grad_V_val)
+            print('gradient_W = ', grad_W_val)
+            print('gradient_b = ', grad_b_val)
+            
+            
             
             loss_value.append(loss_tf_val)
             sharpe_value.append(temp_sharpe)
             last_signal_value.append(last_signal)
             last_output_value.append(last_output)
-            #print(grad_[0])
-            #print(grad_)
-            #update=sess.run(tf.norm(grad_vals[0]*learning_rate))
-            '''
-            count=0     
-            
-            while(count<10):
-                count+=1
-                grad=tf.gradients(loss,[U,W,b,V,c])
-    
-                grad_operations_val , loss_tf_val, grad_calcul_val = sess.run([grad_operations, loss, grad_calcul], feed_dict=feed_input)
-                grad_val=sess.run(grad, feed_dict=feed_input)
-    
-                loss_value.append(loss_tf_val)
-                update=sess.run(tf.norm(grad_val[0]*learning_rate))
-            '''    
             graph_writer.add_summary(summary,j)
             
         global_loss_value.append(loss_value)
