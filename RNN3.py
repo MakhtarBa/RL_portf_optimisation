@@ -9,6 +9,17 @@ Created on Mon Dec 11 22:31:20 2017
 # -*- coding: utf-8 -*-
 
 
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Dec 11 22:31:20 2017
+
+@author: Makhtar Ba
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
 import numpy as np
 import sklearn
 import pandas as pd
@@ -19,6 +30,7 @@ from sklearn.decomposition import *
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import time as tm
+from sklearn.preprocessing import MinMaxScaler
 
 from sklearn.metrics import mean_squared_error
 
@@ -26,7 +38,6 @@ os.chdir('C:/Users/Makhtar Ba/Documents/Columbia/TimeSeriesAnalysis/data/data')
 
 data=pd.read_csv('RawData.csv', sep=",")
 
-data=data.scale()
 print(data.columns)
 
 df = pd.DataFrame(data['Volume'])
@@ -89,6 +100,9 @@ return_df = (return_series - return_series.shift(1))/return_series
 data1=pd.concat([data1,pd.DataFrame(return_df)],axis=1)
 
 del data1['Open Price']
+data1=pd.concat([data1,pd.DataFrame(return_df)],axis=1)
+
+data1=data1.dropna()
 
 training_data=data1.values[train_down:train_up]
 testing_data=data1.values[test_down:test_up]
@@ -105,7 +119,14 @@ num_unrollings =  10
 #rolling_window_size = 100
 look_back = 20 # number of days to lookback, length of the input time series
 #a is inmput data
-#a=np.array([testing_data[column_name][j:j+look_back].values for j in range(1, len(return_df[column_name])-look_back)],np.float32)
+
+a=[]
+for j in range(1, scaled_train.shape[0]-look_back):    
+    list_=[]
+    for column_name in range(scaled_train.shape[1]):
+        list_=np.concatenate((list_,scaled_train[j:j+look_back,column_name]),axis=0)
+    a.append(list_)    
+#a=np.array([[list_.append(testing_data[column_name][j:j+look_back].values) for column_name in testing_data.columns] for j in range(1, len(return_df[column_name])-look_back)])for column_,np.float32)
 delta=0.02 #transaction cost (bps)
 time=100 #start_time
 num_indicators=scaled_train.shape[1]
@@ -144,12 +165,12 @@ with g.as_default():
 
     input_data = []
     for i in range(num_unrollings):
-        input_data.append(tf.placeholder(tf.float32,shape=(num_indicators,look_back),name='input'))
+        input_data.append(tf.placeholder(tf.float32,shape=(None,num_indicators*look_back),name='input'))
 
  
     #Variables
     #input matrix
-    U = tf.Variable(tf.truncated_normal([num_indicators,look_back,num_nodes],-0.1,0.1))
+    U = tf.Variable(tf.truncated_normal([num_indicators*look_back,num_nodes],-0.1,0.1))
     #U = tf.Variable(tf.zeros([look_back,num_nodes]))
     
     #recurrent matrix multiplies previous output
@@ -170,29 +191,28 @@ with g.as_default():
     #model
     
     # Recheck the dimensions of the multiplications of matrices accrding to the paper 
-    #when training truncate the gradients after num_unrollings
+    #when training truncate the gradients after num_unrollin  gs
     #print(tf.reshape(tf.sign(input_data[0][0][0]),[1,1]))
-    tensor_real_returns=tf.reshape(input_data[num_indicators-1][0][look_back-1],[1,1]) #appending later, tensor shape preserved
+    tensor_real_returns=tf.reshape(input_data[0][0][num_indicators*look_back-1],[1,1]) #appending later, tensor shape preserved
     for i in range(num_unrollings):
 
         
         if i == 0:
             #output_data_feed=tf.reshape(tf.cast(tf.sign(input_data[0][0][look_back-1]), tf.float32),[1,1])        
-            output_data_feed=tf.reshape(tf.sign(input_data[num_indicators-1][0][look_back-1]),[1,1])        
-            output_ = tf.sign(input_data[num_indicators-1][0][look_back-1])
-            for j in range(num_indicators):    
-                a_ = tf.concat((tf.matmul(input_data[i],U[j]),output_*W),axis=1)+b
+            output_data_feed=tf.reshape(tf.sign(input_data[i][0][num_indicators*look_back-1]),[1,1])        
+            output_ = tf.sign(input_data[i][0][num_indicators*look_back-1])
+            a_ = tf.concat((tf.matmul(input_data[i],U),output_*W),axis=1)+b
             h_output = tanh(a_)
             output_after= tanh(tf.matmul(h_output,V)+c)
             
         else:
-            a_ = tf.concat((tf.matmul(input_data[num_indicators-1][i],U),output_after*W),axis=1)+b
+            a_ = tf.concat((tf.matmul(input_data[i],U),output_after*W),axis=1)+b
             h_output = tanh(a_)
             output_after= tanh(tf.matmul(h_output,V)+c)
                 
 
         output_data_feed=tf.concat((output_data_feed,output_after), axis=0)
-        tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][0],[1,1])),axis=0)
+        tensor_real_returns=tf.concat((tensor_real_returns,tf.reshape(input_data[i][0][num_indicators*look_back-1],[1,1])),axis=0)
         
     #mean=tf.reduce_mean(output_data)    
     #print(tensor_real_returns,output_data_feed)
@@ -250,10 +270,6 @@ with g.as_default():
 
     sess=tf.Session() #graph=g)
     
-    merged=tf.summary.merge_all()
-    
-    graph_writer = tf.summary.FileWriter(summaries_dir + '/train',sess.graph)
-    
     
     sess.run(init2)
     
@@ -272,22 +288,9 @@ with g.as_default():
         for j in range(number_batch): 
             #global_step=global_step+1
             epoch_time=epoch_time+1
-            feed_input={input_data[i]:a[epoch_time-num_unrollings+i+j].reshape(1,look_back) for i in range(num_unrollings)}
-            #grad_vals=sess.run(grad,feed_dict=feed_input)
+            feed_input={input_data[i]:a[epoch_time-num_unrollings+i+j].reshape(1,look_back*num_indicators) for i in range(num_unrollings)}
             
             
-            #print('input data = ', feed_input)
-            #print('U = ', sess.run(U))
-            #print('W = ', sess.run(W))
-            #print('b = ', sess.run(b))
-            #print('V = ', sess.run(V))
-            #print('c = ', sess.run(c))
-            
-            #print('mean of W = ', sess.run(tf.reduce_mean(W)))
-            #print('learning rate = ', sess.run(learning_rate))  
-            #rint('output = ', sess.run(observed_returns,feed_dict=feed_input))
-            
-            #grad_, loss_tf_val, temp_sharpe, last_signal, last_output= sess.run([grad_calcul, loss, sharpe, output_data_feed[num_unrollings - 1],output_after[0][0]], feed_dict=feed_input)     
             temp_sharpe = sess.run(sharpe,feed_dict=feed_input)
             loss_tf_val = sess.run(loss,feed_dict=feed_input)
             
@@ -295,7 +298,6 @@ with g.as_default():
             
             last_signal = sess.run(output_data_feed[num_unrollings - 1],feed_dict=feed_input)
             last_output = sess.run(output_after[0][0],feed_dict=feed_input)
-            summary=sess.run(merged,feed_dict=feed_input)
             garb =sess.run(grad_compute,  feed_dict=feed_input)
             
             grad_=sess.run([grad_apply],  feed_dict=feed_input)
@@ -319,12 +321,13 @@ with g.as_default():
             sharpe_value.append(temp_sharpe)
             last_signal_value.append(last_signal)
             last_output_value.append(last_output)
-            graph_writer.add_summary(summary,j)
+            
             
         global_loss_value.append(loss_value)
         global_sharpe_value.append(sharpe_value)
         global_last_signal_value.append(last_signal_value)
         global_last_output_value.append(last_output_value)
 time2 = tm.time()     
+
 
 
