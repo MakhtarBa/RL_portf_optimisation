@@ -15,7 +15,6 @@ learning phase
 """
 
 data_path = '/Users/Drogon/Documents/Columbia/Courses/Fall_2017/Big_Data_Choromanski/data/data'
-
 folder_name = 'dummy' ############# CHANGE THIS
 
 import numpy as np
@@ -93,7 +92,7 @@ def run_layer(U,W,b,V,c, look_back_data, F_prev):
 
 
 ###
-num_updates = 10
+num_updates = 150
 
 
 
@@ -159,3 +158,8 @@ comp_market_return = [1.]
 for i in range(len(market_return)):
     comp_market_return.append(comp_market_return[-1]*(1 + market_return[i]))
 plt.plot(comp_market_return)
+
+#%%
+plt.plot(comp_model_return)
+plt.plot(comp_market_return)
+plt.legend(['model','market'])
