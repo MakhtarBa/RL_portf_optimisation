@@ -1,10 +1,21 @@
 "# RL_portf_optimisation
 
-############## Supervised Learning files:
+############## Data: 
+
+Data is present in the 'RawData.csv' file.
 
 
+############## Supervised Learning files: 
 
+supervised.ipynb: Trains on data from 'RawData.csv'
 
+Different sections of the notebook conatin functions on data formatting, model architecture, training and testing.
+
+Call the function run_index_scaled(timestep, repeats, n_batch, n_epochs, n_neurons, train_up, train_low, test_up, test_low) to 
+
+train the network on data starting from 'train_low' till 'train_up' and testing on data from 'test_low' till 'test_up'.
+
+The output is of the form mean squared errors, predicted returns and expected returns
 
 
 
