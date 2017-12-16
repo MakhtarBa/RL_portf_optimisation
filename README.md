@@ -21,9 +21,20 @@ The output is of the form mean squared errors, predicted returns and expected re
 
 ############## Q-Learning files:
 
+Use the ICA-Preparation file to do ICA decomposition of the datasetm the result will be saved in the Ind_components.csv, ad a demixing .csv  file in the working directory, These files correspond to the decomposition in independent factors and to the demixing matrix.
 
+The Q-learning file takes the Ind_components file as an imput performs the Q-update depending on the choosen model and the level of lambda if the Q-lambda model is choosen and performs the trading strategy. 
+So the parameters are :
+-the right Q-update function in the Q error function : dependent on us wanting to use Q-lambda or not 
+-Lambda
+-the discount factor : gamma
+-the learning rate nu : nu 
+-the error rate : error 
+-the training date : train_size (corresponding to the length of an episode)
+-the number of episodes: num_iterations
+-The E greedy exploration : epsilon
 
-
+The output is in the form of precision of the signal compared to the actual market signals, the expected cumulative returns using the trained policy, and the trained Q-table,
 
 
 
